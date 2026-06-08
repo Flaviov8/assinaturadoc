@@ -1,0 +1,201 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>V8 Assinatura</title>
+
+<!-- ✅ CORRETO -->
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+
+<style>
+body { font-family: Arial; background:#f4f6f9; padding:20px }
+.container { background:#fff; padding:20px; max-width:900px; margin:auto }
+input, button { width:100%; padding:10px; margin-top:10px }
+canvas { border:2px solid black; width:100%; height:150px }
+button { background:#0078d4; color:white; border:none }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>Assinar Documento</h2>
+
+<input type="file" id="pdfFile">
+<input id="nome" placeholder="Nome">
+<input id="email" placeholder="Email">
+<input id="cpf" placeholder="CPF">
+
+<h3>Equipamentos</h3>
+<div id="equipamentos"></div>
+<button onclick="addLinha()">Adicionar linha</button>
+
+<h3>Assinatura</h3>
+<canvas id="assinatura"></canvas>
+<button onclick="limpar()">Limpar</button>
+
+<button onclick="gerar()">GERAR PDF</button>
+
+</div>
+
+<script>
+
+// ===== CANVAS =====
+const canvas = document.getElementById("assinatura");
+const ctx = canvas.getContext("2d");
+
+// ✅ AJUSTE REAL
+function ajustarCanvas(){
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+}
+ajustarCanvas();
+
+let desenhando = false;
+
+canvas.addEventListener("mousedown", e=>{
+    desenhando = true;
+    ctx.beginPath();
+    ctx.moveTo(e.offsetX,e.offsetY);
+});
+
+canvas.addEventListener("mousemove", e=>{
+    if(!desenhando) return;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineTo(e.offsetX,e.offsetY);
+    ctx.stroke();
+});
+
+canvas.addEventListener("mouseup", ()=>desenhando=false);
+
+function limpar(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+}
+
+// ===== EQUIPAMENTOS =====
+function addLinha(){
+    const div = document.createElement("div");
+    div.innerHTML = `
+        <input placeholder="Equipamento">
+        <input placeholder="Descrição">
+        <input placeholder="Valor">
+        <hr>
+    `;
+    document.getElementById("equipamentos").appendChild(div);
+}
+addLinha();
+
+// ===== HASH =====
+async function gerarHash(bytes){
+    const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2,"0"))
+        .join("");
+}
+
+// ===== IP =====
+async function pegarIP(){
+    try {
+        const res = await fetch("https://api.ipify.org?format=json");
+        const data = await res.json();
+        return data.ip;
+    } catch {
+        return "IP não obtido";
+    }
+}
+
+// ===== MAIN =====
+async function gerar(){
+
+    const file = document.getElementById("pdfFile").files[0];
+    if(!file) return alert("Selecione o PDF");
+
+    const nome = document.getElementById("nome").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const cpf = document.getElementById("cpf").value;
+
+    const ip = await pegarIP();
+    const dataHora = new Date().toLocaleString("pt-BR");
+
+    // ===== CARREGA PDF =====
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+
+    const pages = pdfDoc.getPages();
+
+    // ===== TABELA =====
+    let page = pages[0];
+    let y = page.getHeight() - 300;
+
+    const linhas = document.getElementById("equipamentos").children;
+
+    for(let linha of linhas){
+        const inputs = linha.querySelectorAll("input");
+
+        page.drawText(inputs[0].value.substring(0,20), { x:60, y, size:9 });
+        page.drawText(inputs[1].value.substring(0,30), { x:220, y, size:9 });
+        page.drawText(inputs[2].value.substring(0,15), { x:460, y, size:9 });
+
+        y -= 18;
+    }
+
+    // ===== ÚLTIMA PÁGINA =====
+    const lastPage = pages[pages.length - 1];
+
+    const assinaturaBase64 = canvas.toDataURL();
+    const assinaturaBytes = await fetch(assinaturaBase64).then(r=>r.arrayBuffer());
+    const assinaturaImg = await pdfDoc.embedPng(assinaturaBytes);
+
+    lastPage.drawImage(assinaturaImg,{
+        x:200,
+        y:100,
+        width:200,
+        height:80
+    });
+
+    // dados
+    lastPage.drawText(`Nome: ${nome}`, { x:80, y:220, size:10 });
+    lastPage.drawText(`Email: ${email}`, { x:80, y:205, size:10 });
+    lastPage.drawText(`CPF: ${cpf}`, { x:80, y:190, size:10 });
+
+    lastPage.drawText(`Data/Hora: ${dataHora}`, { x:80, y:175, size:10 });
+    lastPage.drawText(`IP: ${ip}`, { x:80, y:160, size:10 });
+
+    // ===== SALVA =====
+    const pdfBytes = await pdfDoc.save();
+
+    // HASH
+    const hash = await gerarHash(pdfBytes);
+
+    // RECARREGA
+    const finalDoc = await PDFLib.PDFDocument.load(pdfBytes);
+    const finalPage = finalDoc.getPages().slice(-1)[0];
+
+    finalPage.drawText(`HASH: ${hash.substring(0,60)}...`, {
+        x:50,
+        y:40,
+        size:8
+    });
+
+    const finalBytes = await finalDoc.save();
+
+    // ===== DOWNLOAD =====
+    const blob = new Blob([finalBytes], { type:"application/pdf" });
+
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "Documento_V8.pdf";
+    a.click();
+
+    alert("✅ PDF gerado com sucesso!");
+}
+
+</script>
+
+</body>
+</html>
