@@ -1,200 +1,241 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>V8 Assinatura</title>
 
-<!-- ✅ CORRETO -->
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
 
 <style>
-body { font-family: Arial; background:#f4f6f9; padding:20px }
-.container { background:#fff; padding:20px; max-width:900px; margin:auto }
-input, button { width:100%; padding:10px; margin-top:10px }
-canvas { border:2px solid black; width:100%; height:150px }
-button { background:#0078d4; color:white; border:none }
+*{box-sizing:border-box;}
+body{font-family:Arial;background:#f4f6f9;margin:0;}
+.container{background:#fff;padding:16px;max-width:900px;margin:auto;border-radius:10px}
+.form-grid{display:grid;gap:10px}
+@media(min-width:600px){.form-grid{grid-template-columns:1fr 1fr}}
+
+.linha{display:grid;gap:8px}
+@media(min-width:700px){.linha{grid-template-columns:2fr 3fr 1fr}}
+
+input,button{width:100%;padding:10px;border-radius:6px;border:1px solid #ccc}
+button{background:#0078d4;color:#fff;border:none}
+
+canvas{width:100%;height:180px;border:2px solid #000;border-radius:6px;touch-action:none}
+
+.progress{height:20px;background:#ddd;border-radius:10px}
+.bar{height:100%;width:0;background:#28a745}
+
+iframe{width:100%;height:350px;border:none;margin-top:10px}
 </style>
 </head>
 
 <body>
-
 <div class="container">
 
 <h2>Assinar Documento</h2>
 
+<div class="form-grid">
 <input type="file" id="pdfFile">
 <input id="nome" placeholder="Nome">
 <input id="email" placeholder="Email">
 <input id="cpf" placeholder="CPF">
+</div>
 
 <h3>Equipamentos</h3>
 <div id="equipamentos"></div>
 <button onclick="addLinha()">Adicionar linha</button>
 
+<h3>Total: <span id="total">R$ 0,00</span></h3>
+
 <h3>Assinatura</h3>
 <canvas id="assinatura"></canvas>
+
+<label>Posição X</label>
+<input type="range" id="posX" min="0" max="600" value="200">
+
+<label>Posição Y</label>
+<input type="range" id="posY" min="0" max="600" value="100">
+
 <button onclick="limpar()">Limpar</button>
 
+<h3>Progresso</h3>
+<div class="progress"><div id="bar" class="bar"></div></div>
+
 <button onclick="gerar()">GERAR PDF</button>
+
+<h3>Preview</h3>
+<iframe id="preview"></iframe>
 
 </div>
 
 <script>
 
-// ===== CANVAS =====
-const canvas = document.getElementById("assinatura");
-const ctx = canvas.getContext("2d");
+// ===== CANVAS RESPONSIVO =====
+const canvas=document.getElementById("assinatura");
+const ctx=canvas.getContext("2d");
 
-// ✅ AJUSTE REAL
-function ajustarCanvas(){
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
+function resizeCanvas(){
+  const rect=canvas.getBoundingClientRect();
+  canvas.width=rect.width;
+  canvas.height=rect.height;
 }
-ajustarCanvas();
+window.addEventListener("resize",resizeCanvas);
+resizeCanvas();
 
-let desenhando = false;
+let desenhando=false;
 
-canvas.addEventListener("mousedown", e=>{
-    desenhando = true;
-    ctx.beginPath();
-    ctx.moveTo(e.offsetX,e.offsetY);
+// mouse
+canvas.addEventListener("mousedown",e=>{
+  desenhando=true;
+  ctx.beginPath();
+  ctx.moveTo(e.offsetX,e.offsetY);
 });
-
-canvas.addEventListener("mousemove", e=>{
-    if(!desenhando) return;
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineTo(e.offsetX,e.offsetY);
-    ctx.stroke();
+canvas.addEventListener("mousemove",e=>{
+  if(desenhando){ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();}
 });
+canvas.addEventListener("mouseup",()=>desenhando=false);
 
-canvas.addEventListener("mouseup", ()=>desenhando=false);
+// touch
+canvas.addEventListener("touchstart",e=>{
+  e.preventDefault();
+  const t=e.touches[0];
+  const r=canvas.getBoundingClientRect();
+  ctx.beginPath();
+  ctx.moveTo(t.clientX-r.left,t.clientY-r.top);
+  desenhando=true;
+});
+canvas.addEventListener("touchmove",e=>{
+  e.preventDefault();
+  if(!desenhando)return;
+  const t=e.touches[0];
+  const r=canvas.getBoundingClientRect();
+  ctx.lineTo(t.clientX-r.left,t.clientY-r.top);
+  ctx.stroke();
+});
+canvas.addEventListener("touchend",()=>desenhando=false);
 
-function limpar(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+function limpar(){ctx.clearRect(0,0,canvas.width,canvas.height);}
+
+// ===== VALOR =====
+function aplicarMascara(input){
+  input.onblur=()=>{
+    let v=input.value.replace(/[^\d,]/g,"").replace(",",".");
+    let n=parseFloat(v);
+    if(!isNaN(n)){
+      input.value=n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+      calcTotal();
+    }
+  };
+  input.onfocus=()=>input.value=input.value.replace(/[^\d,]/g,"");
+}
+
+function calcTotal(){
+  let total=0;
+  document.querySelectorAll(".valor").forEach(i=>{
+    let v=i.value.replace(/[^\d,]/g,"").replace(",",".");
+    let n=parseFloat(v);
+    if(!isNaN(n)) total+=n;
+  });
+  document.getElementById("total").innerText=
+    total.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 }
 
 // ===== EQUIPAMENTOS =====
 function addLinha(){
-    const div = document.createElement("div");
-    div.innerHTML = `
-        <input placeholder="Equipamento">
-        <input placeholder="Descrição">
-        <input placeholder="Valor">
-        <hr>
-    `;
-    document.getElementById("equipamentos").appendChild(div);
+  let div=document.createElement("div");
+  div.className="linha";
+  div.innerHTML=`
+    <input placeholder="Equipamento">
+    <input placeholder="Descrição">
+    <input placeholder="Valor" class="valor">
+    <hr>
+  `;
+  document.getElementById("equipamentos").appendChild(div);
+  aplicarMascara(div.querySelector(".valor"));
 }
 addLinha();
 
-// ===== HASH =====
-async function gerarHash(bytes){
-    const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2,"0"))
-        .join("");
+// ===== PROGRESS =====
+function progresso(p){
+  document.getElementById("bar").style.width=p+"%";
 }
 
-// ===== IP =====
-async function pegarIP(){
-    try {
-        const res = await fetch("https://api.ipify.org?format=json");
-        const data = await res.json();
-        return data.ip;
-    } catch {
-        return "IP não obtido";
-    }
-}
-
-// ===== MAIN =====
+// ===== GERAR PDF =====
 async function gerar(){
 
-    const file = document.getElementById("pdfFile").files[0];
-    if(!file) return alert("Selecione o PDF");
+  if(typeof PDFLib==="undefined") return alert("Erro ao carregar PDFLib");
 
-    const nome = document.getElementById("nome").value.trim();
-    const email = document.getElementById("email").value.trim();
-    const cpf = document.getElementById("cpf").value;
+  let file=document.getElementById("pdfFile").files[0];
+  if(!file) return alert("Selecione PDF");
 
-    const ip = await pegarIP();
-    const dataHora = new Date().toLocaleString("pt-BR");
+  const nome=document.getElementById("nome").value || "";
+  const cpf=document.getElementById("cpf").value || "";
+  const email=document.getElementById("email").value || "";
 
-    // ===== CARREGA PDF =====
-    const arrayBuffer = await file.arrayBuffer();
-    const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+  progresso(10);
 
-    const pages = pdfDoc.getPages();
+  let bytes=await file.arrayBuffer();
+  let pdf=await PDFLib.PDFDocument.load(bytes);
+  let pages=pdf.getPages();
 
-    // ===== TABELA =====
-    let page = pages[0];
-    let y = page.getHeight() - 300;
+  let page=pages[0];
+  let y=page.getHeight()-300;
 
-    const linhas = document.getElementById("equipamentos").children;
+  document.querySelectorAll("#equipamentos .linha").forEach(l=>{
+    let i=l.querySelectorAll("input");
+    page.drawText(i[0].value||"",{x:60,y,size:9});
+    page.drawText(i[1].value||"",{x:220,y,size:9});
+    page.drawText(i[2].value||"",{x:460,y,size:9});
+    y-=18;
+  });
 
-    for(let linha of linhas){
-        const inputs = linha.querySelectorAll("input");
+  progresso(50);
 
-        page.drawText(inputs[0].value.substring(0,20), { x:60, y, size:9 });
-        page.drawText(inputs[1].value.substring(0,30), { x:220, y, size:9 });
-        page.drawText(inputs[2].value.substring(0,15), { x:460, y, size:9 });
+  let last=pages[pages.length-1];
 
-        y -= 18;
-    }
+  let imgBytes=await fetch(canvas.toDataURL()).then(r=>r.arrayBuffer());
+  let img=await pdf.embedPng(imgBytes);
 
-    // ===== ÚLTIMA PÁGINA =====
-    const lastPage = pages[pages.length - 1];
+  let x=document.getElementById("posX").value;
+  let yy=document.getElementById("posY").value;
 
-    const assinaturaBase64 = canvas.toDataURL();
-    const assinaturaBytes = await fetch(assinaturaBase64).then(r=>r.arrayBuffer());
-    const assinaturaImg = await pdfDoc.embedPng(assinaturaBytes);
+  last.drawImage(img,{x:+x,y:+yy,width:200,height:80});
 
-    lastPage.drawImage(assinaturaImg,{
-        x:200,
-        y:100,
-        width:200,
-        height:80
-    });
+  last.drawText("Nome: "+nome,{x:80,y:220,size:10});
+  last.drawText("Email: "+email,{x:80,y:205,size:10});
+  last.drawText("CPF: "+cpf,{x:80,y:190,size:10});
 
-    // dados
-    lastPage.drawText(`Nome: ${nome}`, { x:80, y:220, size:10 });
-    lastPage.drawText(`Email: ${email}`, { x:80, y:205, size:10 });
-    lastPage.drawText(`CPF: ${cpf}`, { x:80, y:190, size:10 });
+  progresso(70);
 
-    lastPage.drawText(`Data/Hora: ${dataHora}`, { x:80, y:175, size:10 });
-    lastPage.drawText(`IP: ${ip}`, { x:80, y:160, size:10 });
+  let pdfBytes=await pdf.save();
 
-    // ===== SALVA =====
-    const pdfBytes = await pdfDoc.save();
+  // HASH
+  const hashBuffer=await crypto.subtle.digest("SHA-256",pdfBytes);
+  const hash=Array.from(new Uint8Array(hashBuffer))
+    .map(b=>b.toString(16).padStart(2,"0"))
+    .join("");
 
-    // HASH
-    const hash = await gerarHash(pdfBytes);
+  let finalPdf=await PDFLib.PDFDocument.load(pdfBytes);
+  let finalPage=finalPdf.getPages().slice(-1)[0];
 
-    // RECARREGA
-    const finalDoc = await PDFLib.PDFDocument.load(pdfBytes);
-    const finalPage = finalDoc.getPages().slice(-1)[0];
+  finalPage.drawText("HASH: "+hash.substring(0,60),{x:50,y:40,size:7});
 
-    finalPage.drawText(`HASH: ${hash.substring(0,60)}...`, {
-        x:50,
-        y:40,
-        size:8
-    });
+  const finalBytes=await finalPdf.save();
 
-    const finalBytes = await finalDoc.save();
+  let blob=new Blob([finalBytes],{type:"application/pdf"});
+  let url=URL.createObjectURL(blob);
 
-    // ===== DOWNLOAD =====
-    const blob = new Blob([finalBytes], { type:"application/pdf" });
+  // ✅ PREVIEW OK
+  document.getElementById("preview").src=url;
 
-    const url = URL.createObjectURL(blob);
+  progresso(100);
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "Documento_V8.pdf";
-    a.click();
-
-    alert("✅ PDF gerado com sucesso!");
+  // ✅ DOWNLOAD OK
+  let a=document.createElement("a");
+  a.href=url;
+  a.download="Documento_V8.pdf";
+  a.click();
 }
-
 </script>
 
 </body>
